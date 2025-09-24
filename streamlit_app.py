@@ -3,12 +3,11 @@ import paho.mqtt.client as mqtt
 import threading
 import json
 import collections
-import time
 
 # ---- Configuración del broker público ----
 BROKER = "broker.hivemq.com"
 PORT = 1883
-TOPIC = "iot/demo"  # Tópico donde publicaremos/recibiremos
+TOPIC = "iot/demo"
 
 # ---- Variables para almacenar datos ----
 BUFFER = 200
@@ -25,7 +24,7 @@ def on_message(client, userdata, message):
         device = payload.get("device", "")
         value = payload.get("value", None)
 
-        # Simular que sensor1=temperatura, sensor2=humedad, sensor3=proximidad
+        # Asignar a cada sensor
         if device == "sensor1":
             store["temp"].append(value)
         elif device == "sensor2":
@@ -69,7 +68,7 @@ st.line_chart(list(store["prox"]), height=200)
 st.subheader("📩 Últimos mensajes MQTT")
 if store["temp"] or store["hum"] or store["prox"]:
     last_msgs = []
-    for t,h,p in zip(store["temp"], store["hum"], store["prox"]):
+    for t, h, p in zip(store["temp"], store["hum"], store["prox"]):
         last_msgs.append({"temp": t, "hum": h, "prox": p})
     for msg in reversed(last_msgs[-10:]):
         st.json(msg)
