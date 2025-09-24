@@ -1,39 +1,68 @@
-import json, threading, collections
 import streamlit as st
-import paho.mqtt.client as mqtt
+import threading
+import time
+import json
 from src.mqtt_io import make_client
-from src.utils import load_config
 
-st.set_page_config(page_title="IoT Live Dashboard", layout="wide")
-cfg = load_config()
-BUFFER = 200
-store = {k: collections.deque(maxlen=BUFFER) for k in ("temp","hum","prox")}
+# -----------------------------------------------------
+# CONFIGURACIÓN DEL BROKER MQTT
+# -----------------------------------------------------
+cfg = {
+    "broker": "broker.hivemq.com",  # Broker público
+    "port": 1883,                   # Puerto estándar MQTT sin TLS
+    "username": "",                 # Vacío para broker público
+    "password": ""                  # Vacío para broker público
+}
 
-def on_message(client, userdata, message):
+# Estado global para almacenar mensajes recibidos
+if "messages" not in st.session_state:
+    st.session_state["messages"] = []
+
+# -----------------------------------------------------
+# Callback cuando llega un mensaje MQTT
+# -----------------------------------------------------
+def on_message(client, userdata, msg):
+    payload = msg.payload.decode()
     try:
-        payload = json.loads(message.payload.decode("utf-8"))
-        topic = message.topic.split("/")[-1]
-        if topic in store:
-            store[topic].append(float(payload["value"]))
-    except Exception:
-        pass
+        data = json.loads(payload)
+    except:
+        data = {"raw": payload}
 
+    st.session_state["messages"].append({
+        "topic": msg.topic,
+        "data": data,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+# -----------------------------------------------------
+# Hilo para gestionar conexión MQTT
+# -----------------------------------------------------
 def mqtt_thread():
-    client = make_client("streamlit", cfg["broker"], cfg["port"], cfg["username"], cfg["password"], on_message)
-    client.subscribe(f"{cfg['base_topic']}/#")
+    client = make_client(
+        "streamlit",
+        cfg["broker"],
+        cfg["port"],
+        cfg["username"],
+        cfg["password"],
+        on_message
+    )
+    client.subscribe("#")  # Suscribirse a todos los tópicos
     client.loop_forever()
 
-if "mqtt_started" not in st.session_state:
-    threading.Thread(target=mqtt_thread, daemon=True).start()
-    st.session_state["mqtt_started"] = True
+# Lanzar el hilo MQTT solo una vez
+if "mqtt_thread_started" not in st.session_state:
+    t = threading.Thread(target=mqtt_thread, daemon=True)
+    t.start()
+    st.session_state["mqtt_thread_started"] = True
 
-st.title("Simulación IoT – Dashboard en Tiempo Real")
-col1, col2, col3 = st.columns(3)
-for c, k, label in [(col1,"temp","Temperatura (°C)"), (col2,"hum","Humedad (%)"), (col3,"prox","Proximidad (cm)")]:
-    val = store[k][-1] if len(store[k]) else None
-    c.metric(label, val)
+# -----------------------------------------------------
+# Interfaz Streamlit
+# -----------------------------------------------------
+st.title("IoT Sim Lab - MQTT Monitor")
 
-st.line_chart(list(store["temp"]), height=200)
-st.line_chart(list(store["hum"]), height=200)
-st.line_chart(list(store["prox"]), height=200)
-st.caption(f"Broker: {cfg['broker']} | Base topic: {cfg['base_topic']}")
+st.markdown("Conectado a broker público **HiveMQ** (`broker.hivemq.com:1883`)")
+
+# Mostrar mensajes
+st.subheader("Mensajes recibidos")
+for msg in st.session_state["messages"][-20:]:
+    st.json(msg)
