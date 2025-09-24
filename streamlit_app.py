@@ -1,53 +1,77 @@
 import streamlit as st
 import paho.mqtt.client as mqtt
-import json
 import threading
+import json
+import collections
+import time
 
-# Configuración del broker público
-cfg = {
-    "broker": "broker.hivemq.com",  # Broker público gratuito
-    "port": 1883,
-    "topic": "iot/demo"             # Tema donde publicaremos y escucharemos
+# ---- Configuración del broker público ----
+BROKER = "broker.hivemq.com"
+PORT = 1883
+TOPIC = "iot/demo"  # Tópico donde publicaremos/recibiremos
+
+# ---- Variables para almacenar datos ----
+BUFFER = 200
+store = {
+    "temp": collections.deque(maxlen=BUFFER),
+    "hum": collections.deque(maxlen=BUFFER),
+    "prox": collections.deque(maxlen=BUFFER)
 }
 
-# Variable global para almacenar mensajes recibidos
-messages = []
-
-# Callback cuando nos conectamos al broker
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        print("✅ Conectado al broker MQTT")
-        client.subscribe(cfg["topic"])
-    else:
-        print(f"❌ Error de conexión: {rc}")
-
-# Callback cuando recibimos un mensaje
-def on_message(client, userdata, msg):
+# ---- Callback cuando recibimos mensajes ----
+def on_message(client, userdata, message):
     try:
-        payload = msg.payload.decode("utf-8")
-        data = json.loads(payload)
-    except Exception:
-        data = {"raw": msg.payload.decode("utf-8")}
-    messages.append(data)
+        payload = json.loads(message.payload.decode("utf-8"))
+        device = payload.get("device", "")
+        value = payload.get("value", None)
 
-# Lanzar cliente MQTT en un hilo aparte
+        # Simular que sensor1=temperatura, sensor2=humedad, sensor3=proximidad
+        if device == "sensor1":
+            store["temp"].append(value)
+        elif device == "sensor2":
+            store["hum"].append(value)
+        elif device == "sensor3":
+            store["prox"].append(value)
+    except Exception:
+        pass  # ignorar errores de parsing
+
+# ---- Hilo MQTT ----
 def mqtt_thread():
-    client = mqtt.Client()
-    client.on_connect = on_connect
+    client = mqtt.Client(client_id="streamlit", callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
     client.on_message = on_message
-    client.connect(cfg["broker"], cfg["port"], 60)
+    client.connect(BROKER, PORT, 60)
+    client.subscribe(TOPIC)
     client.loop_forever()
 
-threading.Thread(target=mqtt_thread, daemon=True).start()
+# Iniciar hilo MQTT si no está iniciado
+if "mqtt_started" not in st.session_state:
+    threading.Thread(target=mqtt_thread, daemon=True).start()
+    st.session_state["mqtt_started"] = True
 
 # ---- Interfaz Streamlit ----
-st.title("🌐 IoT Dashboard con MQTT (Broker Público)")
-st.write(f"Conectado al broker **{cfg['broker']}:{cfg['port']}**, tópico **{cfg['topic']}**")
+st.set_page_config(page_title="IoT Dashboard Público", layout="wide")
+st.title("🌐 Simulación IoT – Dashboard en Tiempo Real")
+st.write(f"Broker: **{BROKER}:{PORT}** | Tópico: **{TOPIC}**")
 
-# Mostrar mensajes recibidos
-st.subheader("📩 Mensajes recibidos")
-if messages:
-    for m in reversed(messages[-10:]):  # Mostrar los últimos 10
-        st.json(m)
+# Mostrar métricas actuales
+col1, col2, col3 = st.columns(3)
+col1.metric("Temperatura (°C)", store["temp"][-1] if store["temp"] else "—")
+col2.metric("Humedad (%)", store["hum"][-1] if store["hum"] else "—")
+col3.metric("Proximidad (cm)", store["prox"][-1] if store["prox"] else "—")
+
+# Mostrar gráficos en tiempo real
+st.subheader("📈 Gráficos de sensores")
+st.line_chart(list(store["temp"]), height=200)
+st.line_chart(list(store["hum"]), height=200)
+st.line_chart(list(store["prox"]), height=200)
+
+# Mensajes recibidos (últimos 10)
+st.subheader("📩 Últimos mensajes MQTT")
+if store["temp"] or store["hum"] or store["prox"]:
+    last_msgs = []
+    for t,h,p in zip(store["temp"], store["hum"], store["prox"]):
+        last_msgs.append({"temp": t, "hum": h, "prox": p})
+    for msg in reversed(last_msgs[-10:]):
+        st.json(msg)
 else:
     st.info("Esperando mensajes MQTT en el tópico...")
