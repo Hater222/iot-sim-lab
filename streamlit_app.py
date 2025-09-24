@@ -1,4 +1,4 @@
-import json, threading, collections, time
+import json, threading, collections
 import streamlit as st
 import paho.mqtt.client as mqtt
 from src.utils import load_config
@@ -6,12 +6,11 @@ from src.mqtt_io import make_client
 
 st.set_page_config(page_title="IoT Live Dashboard", layout="wide")
 
-# Configuración
 cfg = load_config()
 BUFFER = 200
 store = {k: collections.deque(maxlen=BUFFER) for k in ("temp","hum","prox")}
 
-# Callback al recibir mensajes MQTT
+# Callback MQTT
 def on_message(client, userdata, message):
     try:
         payload = json.loads(message.payload.decode("utf-8"))
@@ -22,24 +21,41 @@ def on_message(client, userdata, message):
         print("Error en mensaje:", e)
 
 # Hilo MQTT
-def mqtt_thread():
-    client = make_client("streamlit", cfg["broker"], cfg["port"], cfg["username"], cfg["password"], on_message)
+def start_mqtt():
+    client = make_client(
+        "streamlit",
+        cfg["broker"],
+        cfg["port"],
+        cfg["username"],
+        cfg["password"],
+        on_message
+    )
     client.subscribe(f"{cfg['base_topic']}/#")
     client.loop_forever()
 
-# Iniciar hilo solo una vez
+# Lanzar hilo solo una vez
 if "mqtt_started" not in st.session_state:
-    threading.Thread(target=mqtt_thread, daemon=True).start()
+    threading.Thread(target=start_mqtt, daemon=True).start()
     st.session_state["mqtt_started"] = True
 
-# Placeholder para actualizar los gráficos en vivo
+st.title("Simulación IoT – Dashboard en Tiempo Real")
+
+# Placeholders para gráficos y métricas
 placeholder_metrics = st.empty()
 placeholder_charts = st.empty()
 
-while True:
+# Auto refresco cada segundo (sin bloquear la app)
+st_autorefresh = st.experimental_rerun  # Se ejecuta al final de cada ciclo
+
+import time
+
+# Loop de actualización visual (no bloquea MQTT)
+for _ in range(2000):  # simplemente limitar iteraciones
     with placeholder_metrics.container():
         col1, col2, col3 = st.columns(3)
-        for c, k, label in [(col1,"temp","Temperatura (°C)"), (col2,"hum","Humedad (%)"), (col3,"prox","Proximidad (cm)")]:
+        for c, k, label in [(col1,"temp","Temperatura (°C)"),
+                            (col2,"hum","Humedad (%)"),
+                            (col3,"prox","Proximidad (cm)")]:
             val = store[k][-1] if len(store[k]) else None
             c.metric(label, val)
     
@@ -48,5 +64,6 @@ while True:
         st.line_chart(list(store["hum"]), height=200)
         st.line_chart(list(store["prox"]), height=200)
         st.caption(f"Broker: {cfg['broker']} | Base topic: {cfg['base_topic']}")
-
-    time.sleep(1)  # actualizar cada segundo
+    
+    time.sleep(1)
+    st.experimental_rerun()
