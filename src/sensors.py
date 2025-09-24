@@ -1,9 +1,7 @@
-from __future__ import annotations
-import random
-import time
+import random, time
 from dataclasses import dataclass
 
-def _bounded_random_walk(value: float, low: float, high: float, step: float, jitter: float) -> float:
+def _bounded_random_walk(value, low, high, step, jitter):
     center = (low + high) / 2
     drift = (center - value) * 0.05
     value += drift + random.uniform(-step, step) + random.uniform(-jitter, jitter)
@@ -16,7 +14,7 @@ class TemperatureSensor:
     high: float = 30.0
     step: float = 0.2
     jitter: float = 0.05
-    def read(self) -> float:
+    def read(self):
         self.value = _bounded_random_walk(self.value, self.low, self.high, self.step, self.jitter)
         return round(self.value, 2)
 
@@ -27,7 +25,7 @@ class HumiditySensor:
     high: float = 75.0
     step: float = 0.3
     jitter: float = 0.05
-    def read(self) -> float:
+    def read(self):
         self.value = _bounded_random_walk(self.value, self.low, self.high, self.step, self.jitter)
         return round(self.value, 1)
 
@@ -40,7 +38,7 @@ class ProximitySensor:
     p_event: float = 0.07
     event_len_s: float = 2.5
     _in_event_until: float = 0.0
-    def read(self) -> float:
+    def read(self):
         now = time.time()
         if now < self._in_event_until:
             return round(random.uniform(self.near_low, self.near_high), 1)
