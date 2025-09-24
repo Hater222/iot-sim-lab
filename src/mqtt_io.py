@@ -1,4 +1,3 @@
-from __future__ import annotations
 import paho.mqtt.client as mqtt
 from typing import Optional, Callable
 
